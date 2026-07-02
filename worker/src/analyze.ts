@@ -27,10 +27,24 @@ interface GeminiResponse {
   error?: { message?: string };
 }
 
+/** Discord Webhookに通知を送る。失敗しても呼び出し元の処理は継続させる。 */
+async function notifyDiscord(webhookUrl: string, message: string): Promise<void> {
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message }),
+    });
+  } catch (e) {
+    console.error('Discord通知に失敗:', e);
+  }
+}
+
 export async function analyzeScoreImage(
   apiKey: string,
   imageBase64: string,
   mediaType: string,
+  discordWebhookUrl?: string,
 ): Promise<AnalyzeResult> {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
@@ -54,6 +68,9 @@ export async function analyzeScoreImage(
   const data = (await res.json().catch(() => ({}))) as GeminiResponse;
   if (!res.ok) {
     if (res.status === 429) {
+      if (discordWebhookUrl) {
+        await notifyDiscord(discordWebhookUrl, '⚠️ Gemini APIの無料枠の利用制限（429）に達しました。');
+      }
       throw new Error('Gemini APIの無料枠の利用制限に達しました。しばらく待つか、点数を手動で入力してください。');
     }
     throw new Error(`Gemini APIエラー (${res.status}): ${data.error?.message ?? '不明なエラー'}`);

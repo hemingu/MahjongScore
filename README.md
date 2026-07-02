@@ -17,6 +17,7 @@ Cloudflare Worker (API: Hono)
 
 Gemini APIキーやパスワードは Cloudflare Worker の secret にのみ保存され、ブラウザには一切渡りません。
 Gemini が使えないとき（無料枠の上限など）は、記録画面でそのまま点数を手動入力できます。
+`DISCORD_WEBHOOK_URL` を設定しておくと、Gemini の無料枠超過（429エラー）時に指定したDiscordチャンネルへ通知が届きます（Discordのチャンネル設定「連携サービス → ウェブフック」で発行）。
 
 | ディレクトリ | 内容 |
 |---|---|
@@ -50,9 +51,10 @@ pnpm exec wrangler d1 create mahjong-score
 pnpm exec wrangler d1 migrations apply mahjong-score --remote
 
 # シークレット設定（対話式で値を入力）
-pnpm exec wrangler secret put GEMINI_API_KEY      # Gemini APIキー (aistudio.google.com/apikey で無料発行)
-pnpm exec wrangler secret put AUTH_PASSWORD       # 記録者ログイン用パスワード
-pnpm exec wrangler secret put SESSION_SECRET      # ランダムな長い文字列 (openssl rand -hex 32 など)
+pnpm exec wrangler secret put GEMINI_API_KEY       # Gemini APIキー (aistudio.google.com/apikey で無料発行)
+pnpm exec wrangler secret put AUTH_PASSWORD        # 記録者ログイン用パスワード
+pnpm exec wrangler secret put SESSION_SECRET       # ランダムな長い文字列 (openssl rand -hex 32 など)
+pnpm exec wrangler secret put DISCORD_WEBHOOK_URL  # （任意）Gemini無料枠超過時にDiscordへ通知する場合のみ設定
 
 # デプロイ → 表示された https://mahjong-score-api.<subdomain>.workers.dev を控える
 pnpm exec wrangler deploy

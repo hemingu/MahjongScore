@@ -19,6 +19,7 @@ type Bindings = {
   GEMINI_API_KEY: string;
   AUTH_PASSWORD: string;
   SESSION_SECRET: string;
+  DISCORD_WEBHOOK_URL?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -360,7 +361,7 @@ app.post('/api/analyze', auth, async (c) => {
     return c.json({ error: '画像データが不正です' }, 400);
   }
   try {
-    const result = await analyzeScoreImage(c.env.GEMINI_API_KEY, image, mediaType);
+    const result = await analyzeScoreImage(c.env.GEMINI_API_KEY, image, mediaType, c.env.DISCORD_WEBHOOK_URL);
     return c.json(result);
   } catch (e) {
     console.error('analyze failed:', e);

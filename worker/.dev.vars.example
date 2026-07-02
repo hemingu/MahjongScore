@@ -3,3 +3,6 @@
 GEMINI_API_KEY=AIzaXXXXX
 AUTH_PASSWORD=dev-password
 SESSION_SECRET=dev-secret-change-me
+# Gemini APIの無料枠超過（429エラー）時にDiscordへ通知する場合のみ設定（任意）
+# サーバー設定 > 連携サービス > ウェブフック で発行できる
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXXX/YYYY
