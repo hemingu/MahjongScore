@@ -1,0 +1,5 @@
+# ローカル開発用。コピーして .dev.vars を作成する（.dev.vars は git 管理外）
+# Gemini APIキーは https://aistudio.google.com/apikey で無料発行できる
+GEMINI_API_KEY=AIzaXXXXX
+AUTH_PASSWORD=dev-password
+SESSION_SECRET=dev-secret-change-me

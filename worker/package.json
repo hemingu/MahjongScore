@@ -1,0 +1,20 @@
+{
+  "name": "@mahjong/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p .",
+    "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "@mahjong/shared": "workspace:*",
+    "hono": "^4.9.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

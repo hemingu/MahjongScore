@@ -1,0 +1,8 @@
+packages:
+  - shared
+  - worker
+  - web
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
