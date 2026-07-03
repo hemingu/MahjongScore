@@ -1,17 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import {
-  SEAT_LABELS,
-  computeGame,
-  hasTie,
-  validateGameScores,
-  type Rule,
-  type Seat,
-} from '@mahjong/shared';
-import { addGame, addYakuman, analyzeImage, fetchGames, fetchPlayers } from '../api';
+import { SEAT_LABELS, hasTie, type GameInput, type Seat } from '@mahjong/shared';
+import { addGamesBulk, addYakuman, analyzeImage, fetchGames, fetchPlayers } from '../api';
 import { fileToResizedBase64 } from '../image';
 import YakumanForm, { emptyYakumanEntry, validateYakumanEntry, type YakumanEntry } from '../components/YakumanForm';
+import GameEntryCard, {
+  emptyEntry,
+  isBlankEntry,
+  isEntryValid,
+  type GameEntry,
+} from '../components/GameEntryCard';
 import { buildGameNoMap } from '../gameNo';
 
 function today(): string {
@@ -51,78 +50,102 @@ export default function RecordPage() {
   );
 }
 
+type MemberMode = 'common' | 'perImage';
+
 function GameRecordTab() {
   const { data: players } = useQuery({ queryKey: ['players'], queryFn: fetchPlayers });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [imageData, setImageData] = useState<{ base64: string; mediaType: string } | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analyzeError, setAnalyzeError] = useState('');
-
+  const [entries, setEntries] = useState<GameEntry[]>([emptyEntry()]);
+  const [memberMode, setMemberMode] = useState<MemberMode>('common');
+  const [commonSeatPlayers, setCommonSeatPlayers] = useState<(number | '')[]>(['', '', '', '']);
   const [playedAt, setPlayedAt] = useState(today());
-  const [rule, setRule] = useState<Rule>('5-10');
-  const [seatPlayers, setSeatPlayers] = useState<(number | '')[]>(['', '', '', '']);
-  const [scores, setScores] = useState<(number | '')[]>(['', '', '', '']);
-  const [kicker, setKicker] = useState<Seat | ''>('');
-  const [remarks, setRemarks] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [yakumanEntries, setYakumanEntries] = useState<YakumanEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const onSelectFile = async (file: File | undefined) => {
-    setAnalyzeError('');
-    if (!file) return;
-    setPreviewUrl(URL.createObjectURL(file));
-    try {
-      setImageData(await fileToResizedBase64(file));
-    } catch {
-      setAnalyzeError('画像の読み込みに失敗しました');
+  const updateEntry = (id: string, patch: Partial<GameEntry>) =>
+    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+
+  const seatsOf = (e: GameEntry) => (memberMode === 'common' ? commonSeatPlayers : e.seatPlayers);
+
+  const onSelectFiles = async (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    if (list.length === 0) return;
+
+    const newEntries: GameEntry[] = [];
+    for (const file of list) {
+      const entry = emptyEntry();
+      entry.previewUrl = URL.createObjectURL(file);
+      try {
+        entry.imageData = await fileToResizedBase64(file);
+      } catch {
+        entry.analyzeError = '画像の読み込みに失敗しました';
+      }
+      newEntries.push(entry);
     }
+
+    setEntries((prev) => {
+      if (prev.length === 1 && isBlankEntry(prev[0])) return newEntries;
+      return [...prev, ...newEntries];
+    });
+
+    if (fileRef.current) fileRef.current.value = '';
   };
 
-  const onAnalyze = async () => {
-    if (!imageData) return;
-    setAnalyzing(true);
-    setAnalyzeError('');
+  const removeEntry = (id: string) => {
+    setEntries((prev) => {
+      const target = prev.find((e) => e.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      const next = prev.filter((e) => e.id !== id);
+      return next.length === 0 ? [emptyEntry()] : next;
+    });
+  };
+
+  const analyzeOne = async (entry: GameEntry) => {
+    if (!entry.imageData) return;
+    const imageData = entry.imageData;
+    updateEntry(entry.id, { analyzeStatus: 'analyzing', analyzeError: '' });
     try {
       const result = await analyzeImage(imageData.base64, imageData.mediaType);
-      setScores([result.bottom*100, result.right*100, result.top*100, result.left*100]);
+      updateEntry(entry.id, {
+        analyzeStatus: 'done',
+        scores: [result.bottom * 100, result.right * 100, result.top * 100, result.left * 100],
+      });
     } catch (e) {
-      setAnalyzeError(e instanceof Error ? e.message : '解析に失敗しました');
-    } finally {
-      setAnalyzing(false);
+      updateEntry(entry.id, {
+        analyzeStatus: 'error',
+        analyzeError: e instanceof Error ? e.message : '解析に失敗しました',
+      });
     }
   };
 
-  const numericScores = scores.every((s) => s !== '') ? scores.map(Number) : null;
-  const scoreErrors = numericScores ? validateGameScores(numericScores) : [];
-  const tie = numericScores ? hasTie(numericScores) : false;
-
-  const preview = useMemo(() => {
-    if (!numericScores || scoreErrors.length > 0) return null;
-    if (tie && kicker === '') return null;
-    try {
-      return computeGame(numericScores, rule, tie ? (kicker as Seat) : null);
-    } catch {
-      return null;
+  const analyzeAll = async () => {
+    for (const entry of entries) {
+      if (entry.imageData && entry.analyzeStatus !== 'done') {
+        await analyzeOne(entry);
+      }
     }
-  }, [numericScores?.join(','), rule, kicker, tie, scoreErrors.length]);
+  };
 
-  const seatsFilled = seatPlayers.every((p) => p !== '');
-  const seatsDistinct = new Set(seatPlayers).size === 4;
+  const imageEntries = entries.filter((e) => e.imageData);
+  const anyAnalyzing = entries.some((e) => e.analyzeStatus === 'analyzing');
+
+  const commonSeatsFilled = commonSeatPlayers.every((p) => p !== '');
+  const commonSeatsDistinct = new Set(commonSeatPlayers).size === 4;
+
+  const entriesValid = entries.every((e) => isEntryValid(e, memberMode, seatsOf(e)));
   const canSubmit =
-    !!preview && seatsFilled && seatsDistinct && /^\d{4}-\d{2}-\d{2}$/.test(playedAt);
-
-  const submit = useMutation({
-    mutationFn: addGame,
-  });
+    entriesValid &&
+    (memberMode === 'perImage' || (commonSeatsFilled && commonSeatsDistinct)) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(playedAt);
 
   const playerName = (id: number | '') => players?.find((p) => p.id === id)?.name ?? '';
 
-  const yakumanPlayerOptions = seatPlayers.map((id, seat) => ({
+  const firstSeats: (number | '')[] = entries[0] ? seatsOf(entries[0]) : ['', '', '', ''];
+  const yakumanPlayerOptions = firstSeats.map((id, seat) => ({
     id: typeof id === 'number' ? id : -1 - seat,
     name: playerName(id) || `（${SEAT_LABELS[seat]}）`,
   }));
@@ -137,36 +160,48 @@ function GameRecordTab() {
     if (!canSubmit) return;
     setSubmitError('');
 
-    // 役満のバリデーション（送信前に全件チェック）
-    for (const entry of yakumanEntries) {
-      const err = validateYakumanEntry(entry);
-      if (err) {
-        setSubmitError(err);
-        return;
+    // 役満のバリデーション（送信前に全件チェック、単一試合登録時のみ）
+    if (entries.length === 1) {
+      for (const entry of yakumanEntries) {
+        const err = validateYakumanEntry(entry);
+        if (err) {
+          setSubmitError(err);
+          return;
+        }
       }
     }
 
     setSubmitting(true);
     try {
-      const { id: gameId } = await submit.mutateAsync({
-        playedAt,
-        rule,
-        kickerSeat: tie ? (kicker as Seat) : null,
-        remarks,
-        entries: seatPlayers.map((playerId, seat) => ({
-          playerId: playerId as number,
-          finalScore: Number(scores[seat]),
-        })),
+      const inputs: GameInput[] = entries.map((e) => {
+        const numericScores = e.scores.map(Number);
+        const tie = hasTie(numericScores);
+        const seats = seatsOf(e);
+        return {
+          playedAt,
+          rule: e.rule,
+          kickerSeat: tie ? (e.kicker as Seat) : null,
+          remarks: e.remarks,
+          entries: seats.map((playerId, seat) => ({
+            playerId: playerId as number,
+            finalScore: Number(e.scores[seat]),
+          })),
+        };
       });
 
-      for (const entry of yakumanEntries) {
-        await addYakuman({
-          gameId,
-          winnerPlayerId: entry.winnerPlayerId as number,
-          loserPlayerId: entry.loserPlayerId === '' ? null : entry.loserPlayerId,
-          isDealer: entry.isDealer,
-          yaku: entry.yaku.filter((y) => y.trim() !== ''),
-        });
+      const { ids } = await addGamesBulk(inputs);
+
+      if (entries.length === 1) {
+        const gameId = ids[0];
+        for (const entry of yakumanEntries) {
+          await addYakuman({
+            gameId,
+            winnerPlayerId: entry.winnerPlayerId as number,
+            loserPlayerId: entry.loserPlayerId === '' ? null : entry.loserPlayerId,
+            isDealer: entry.isDealer,
+            yaku: entry.yaku.filter((y) => y.trim() !== ''),
+          });
+        }
       }
 
       await Promise.all([
@@ -175,7 +210,8 @@ function GameRecordTab() {
       ]);
       navigate('/games');
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : '登録に失敗しました');
+      const message = e instanceof Error ? e.message : '登録に失敗しました';
+      setSubmitError(message.replaceAll('行目', '試合目'));
     } finally {
       setSubmitting(false);
     }
@@ -190,219 +226,171 @@ function GameRecordTab() {
           ref={fileRef}
           type="file"
           accept="image/*"
-          capture="environment"
-          onChange={(e) => onSelectFile(e.target.files?.[0])}
+          multiple
+          onChange={(e) => onSelectFiles(e.target.files)}
           className="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-emerald-700 file:px-4 file:py-2 file:text-white"
         />
-        {previewUrl && (
-          <div className="mt-3 space-y-3">
-            <img src={previewUrl} alt="点数表示" className="max-h-64 rounded border border-gray-200" />
-            <button
-              onClick={onAnalyze}
-              disabled={analyzing || !imageData}
-              className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-            >
-              {analyzing ? '解析中…' : 'AIで点数を解析（Gemini）'}
-            </button>
-          </div>
-        )}
-        {analyzeError && (
-          <p className="mt-2 text-sm text-red-600">
-            {analyzeError}
-            <br />
-            <span className="text-amber-700">解析が使えないときは、②の表に点数を直接入力してください。</span>
-          </p>
-        )}
         <p className="mt-2 text-xs text-gray-500">
-          点数の配置: 下=自分 / 右 / 上 / 左。解析結果は②の表で修正できます。
-          写真を使わず②に手動入力するだけでも記録できます。
+          点数の配置: 下=自分 / 右 / 上 / 左。複数枚選択すると、1枚=1試合として下にカードが並びます。
+          解析結果は③の表で修正できます。写真を使わず③に手動入力するだけでも記録できます。
         </p>
+        {imageEntries.length >= 2 && (
+          <button
+            type="button"
+            onClick={analyzeAll}
+            disabled={anyAnalyzing}
+            className="mt-3 rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+          >
+            {anyAnalyzing ? '解析中…' : 'すべて解析（Gemini）'}
+          </button>
+        )}
       </section>
 
-      {/* 2. 試合情報 */}
+      {/* 2. メンバー・日付 */}
       <section className="rounded-lg bg-white p-5 shadow">
-        <h3 className="mb-3 font-semibold">② 試合情報</h3>
-        <div className="mb-4 flex flex-wrap gap-4">
-          <label className="text-sm">
-            <span className="mb-1 block font-medium">日付</span>
-            <input
-              type="date"
-              value={playedAt}
-              onChange={(e) => setPlayedAt(e.target.value)}
-              className="rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium">順位点</span>
-            <select
-              value={rule}
-              onChange={(e) => setRule(e.target.value as Rule)}
-              className="rounded border border-gray-300 px-3 py-2"
-            >
-              <option value="5-10">5-10（±5,000 / ±10,000）</option>
-              <option value="10-30">10-30（±10,000 / ±30,000）</option>
-            </select>
-          </label>
+        <h3 className="mb-3 font-semibold">② メンバー・日付</h3>
+
+        <div className="mb-4 flex gap-1 rounded-lg bg-emerald-100 p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => setMemberMode('common')}
+            className={`flex-1 rounded px-3 py-2 font-semibold transition ${
+              memberMode === 'common' ? 'bg-emerald-700 text-white shadow' : 'text-emerald-800 hover:bg-emerald-200'
+            }`}
+          >
+            全試合共通
+          </button>
+          <button
+            type="button"
+            onClick={() => setMemberMode('perImage')}
+            className={`flex-1 rounded px-3 py-2 font-semibold transition ${
+              memberMode === 'perImage' ? 'bg-emerald-700 text-white shadow' : 'text-emerald-800 hover:bg-emerald-200'
+            }`}
+          >
+            試合ごとに選択
+          </button>
         </div>
 
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-600">
-              <th className="py-1">席</th>
-              <th className="py-1">メンバー</th>
-              <th className="py-1">終了時点数</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SEAT_LABELS.map((label, seat) => (
-              <tr key={seat}>
-                <td className="py-1 pr-3 whitespace-nowrap">{label}</td>
-                <td className="py-1 pr-3">
-                  <select
-                    value={seatPlayers[seat]}
-                    onChange={(e) => {
-                      const next = [...seatPlayers];
-                      next[seat] = e.target.value === '' ? '' : Number(e.target.value);
-                      setSeatPlayers(next);
-                    }}
-                    className="w-full rounded border border-gray-300 px-2 py-1.5"
-                  >
-                    <option value="">選択…</option>
-                    {players
-                      ?.filter((p) => p.active)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                  </select>
-                </td>
-                <td className="py-1">
-                  <input
-                    type="number"
-                    step={100}
-                    value={scores[seat]}
-                    onChange={(e) => {
-                      const next = [...scores];
-                      next[seat] = e.target.value === '' ? '' : Number(e.target.value);
-                      setScores(next);
-                    }}
-                    className="w-32 rounded border border-gray-300 px-2 py-1.5 text-right"
-                    placeholder="25000"
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {!seatsDistinct && seatsFilled && (
-          <p className="mt-2 text-sm text-red-600">同じメンバーが複数の席に選択されています</p>
-        )}
-        {scoreErrors.map((e) => (
-          <p key={e} className="mt-2 text-sm text-red-600">
-            {e}
-          </p>
-        ))}
-
-        {tie && (
-          <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3">
-            <p className="mb-2 text-sm font-medium text-amber-800">
-              同点の人がいます。着順を決めるため起家（東スタート）を選んでください。
-            </p>
-            <select
-              value={kicker}
-              onChange={(e) => setKicker(e.target.value === '' ? '' : (Number(e.target.value) as Seat))}
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
-            >
-              <option value="">起家を選択…</option>
-              {SEAT_LABELS.map((label, seat) => (
-                <option key={seat} value={seat}>
-                  {label} {playerName(seatPlayers[seat])}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <label className="mt-4 block text-sm">
-          <span className="mb-1 block font-medium">備考</span>
-          <textarea
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            rows={2}
-            className="w-full rounded border border-gray-300 px-3 py-2"
-            placeholder="役満、ハコ下など自由に"
+        <label className="mb-4 block text-sm">
+          <span className="mb-1 block font-medium">日付</span>
+          <input
+            type="date"
+            value={playedAt}
+            onChange={(e) => setPlayedAt(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-2"
           />
         </label>
-      </section>
 
-      {/* 3. 役満（任意） */}
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h3 className="mb-3 font-semibold">③ 役満（任意）</h3>
-        <div className="space-y-3">
-          {yakumanEntries.map((entry, idx) => (
-            <YakumanForm
-              key={idx}
-              entry={entry}
-              onChange={(e) => updateYakumanEntry(idx, e)}
-              players={yakumanPlayerOptions}
-              onRemove={() => removeYakumanEntry(idx)}
-              title={`役満 ${idx + 1}`}
-            />
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={addYakumanEntry}
-          className="mt-3 rounded border border-emerald-700 px-4 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
-        >
-          役満を追加
-        </button>
-      </section>
-
-      {/* 4. 確認 */}
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h3 className="mb-3 font-semibold">④ 確認して登録</h3>
-        {preview ? (
-          <table className="mb-4 w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-600">
-                <th className="py-1">着順</th>
-                <th className="py-1">メンバー</th>
-                <th className="py-1 text-right">点数</th>
-                <th className="py-1 text-right">ポイント</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...preview]
-                .sort((a, b) => a.rank - b.rank)
-                .map((r) => (
-                  <tr key={r.seat} className="border-t border-gray-100">
-                    <td className="py-1.5 font-bold">{r.rank}位</td>
-                    <td className="py-1.5">
-                      {playerName(seatPlayers[r.seat]) || `（${SEAT_LABELS[r.seat]}）`}
-                    </td>
-                    <td className="py-1.5 text-right">{r.finalScore.toLocaleString()}点</td>
-                    <td
-                      className={`py-1.5 text-right font-semibold ${r.point > 0 ? 'text-red-600' : r.point < 0 ? 'text-blue-600' : ''}`}
-                    >
-                      {(r.point > 0 ? '+' : '') + r.point.toFixed(1)}
+        {memberMode === 'common' && (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-600">
+                  <th className="py-1">席</th>
+                  <th className="py-1">メンバー</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SEAT_LABELS.map((label, seat) => (
+                  <tr key={seat}>
+                    <td className="py-1 pr-3 whitespace-nowrap">{label}</td>
+                    <td className="py-1 pr-3">
+                      <select
+                        value={commonSeatPlayers[seat]}
+                        onChange={(e) => {
+                          const next = [...commonSeatPlayers];
+                          next[seat] = e.target.value === '' ? '' : Number(e.target.value);
+                          setCommonSeatPlayers(next);
+                        }}
+                        className="w-full rounded border border-gray-300 px-2 py-1.5"
+                      >
+                        <option value="">選択…</option>
+                        {players
+                          ?.filter((p) => p.active)
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                      </select>
                     </td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="mb-4 text-sm text-gray-500">点数を入力するとここに着順とポイントが表示されます。</p>
+              </tbody>
+            </table>
+            {!commonSeatsDistinct && commonSeatsFilled && (
+              <p className="mt-2 text-sm text-red-600">同じメンバーが複数の席に選択されています</p>
+            )}
+          </>
         )}
+        {memberMode === 'perImage' && (
+          <p className="text-sm text-gray-500">メンバーは③の各試合カードで選択してください。</p>
+        )}
+      </section>
+
+      {/* 3. 試合ごとの情報 */}
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h3 className="mb-3 font-semibold">③ 試合ごとの情報</h3>
+        <div className="space-y-4">
+          {entries.map((entry, idx) => (
+            <GameEntryCard
+              key={entry.id}
+              entry={entry}
+              index={idx}
+              players={players}
+              memberMode={memberMode}
+              seats={seatsOf(entry)}
+              onUpdate={(patch) => updateEntry(entry.id, patch)}
+              onRemove={() => removeEntry(entry.id)}
+              onAnalyze={() => analyzeOne(entry)}
+              canRemove={entries.length > 1}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* 4. 役満（任意） */}
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h3 className="mb-3 font-semibold">④ 役満（任意）</h3>
+        {entries.length === 1 ? (
+          <>
+            <div className="space-y-3">
+              {yakumanEntries.map((entry, idx) => (
+                <YakumanForm
+                  key={idx}
+                  entry={entry}
+                  onChange={(e) => updateYakumanEntry(idx, e)}
+                  players={yakumanPlayerOptions}
+                  onRemove={() => removeYakumanEntry(idx)}
+                  title={`役満 ${idx + 1}`}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={addYakumanEntry}
+              className="mt-3 rounded border border-emerald-700 px-4 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+            >
+              役満を追加
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-gray-500">
+            複数試合の一括登録では、役満は登録後に「役満のみ記録」タブから追加してください。
+          </p>
+        )}
+      </section>
+
+      {/* 5. 確認 */}
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h3 className="mb-3 font-semibold">⑤ 確認して登録</h3>
         {submitError && <p className="mb-2 text-sm whitespace-pre-line text-red-600">{submitError}</p>}
         <button
           onClick={onSubmit}
           disabled={!canSubmit || submitting}
           className="w-full rounded bg-emerald-700 py-2.5 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
         >
-          {submitting ? '登録中…' : 'この内容で登録する'}
+          {submitting ? '登録中…' : `${entries.length}試合を登録する`}
         </button>
       </section>
     </div>
