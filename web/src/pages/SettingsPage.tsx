@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { addPlayer, fetchPlayers, setToken, updatePlayerColor } from '../api';
+import { addPlayer, fetchPlayers, setToken, testDiscordNotify, updatePlayerColor } from '../api';
 import { seriesColor } from '../chartColors';
 
 export default function SettingsPage() {
@@ -31,6 +31,8 @@ export default function SettingsPage() {
     e.preventDefault();
     if (name.trim()) add.mutate(name.trim());
   };
+
+  const discordTest = useMutation({ mutationFn: testDiscordNotify });
 
   return (
     <div className="mx-auto max-w-md space-y-6">
@@ -82,6 +84,28 @@ export default function SettingsPage() {
           </button>
         </form>
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      </section>
+
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h3 className="mb-3 font-semibold">通知</h3>
+        <p className="mb-3 text-xs text-gray-500">
+          Gemini APIの無料枠超過時にDiscordへ通知します。テスト送信で設定を確認できます。
+        </p>
+        <button
+          onClick={() => discordTest.mutate()}
+          disabled={discordTest.isPending}
+          className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+        >
+          {discordTest.isPending ? '送信中…' : 'Discord通知をテスト送信'}
+        </button>
+        {discordTest.isSuccess && (
+          <p className="mt-2 text-sm text-emerald-700">テスト通知を送信しました。Discordを確認してください</p>
+        )}
+        {discordTest.isError && (
+          <p className="mt-2 text-sm text-red-600">
+            {discordTest.error instanceof Error ? discordTest.error.message : 'テスト送信に失敗しました'}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg bg-white p-5 shadow">

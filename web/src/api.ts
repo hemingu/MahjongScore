@@ -68,6 +68,9 @@ export const analyzeImage = (image: string, mediaType: string) =>
 export const updatePlayerColor = (id: number, color: string | null) =>
   request<Player>(`/api/players/${id}`, { method: 'PATCH', body: JSON.stringify({ color }) }, true);
 
+export const testDiscordNotify = () =>
+  request<{ ok: boolean }>('/api/discord/test', { method: 'POST' }, true);
+
 export const fetchYakuman = () => request<Yakuman[]>('/api/yakuman');
 
 export const addYakuman = (input: YakumanInput) =>

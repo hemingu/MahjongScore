@@ -12,7 +12,7 @@ import {
   type Yakuman,
   type YakumanInput,
 } from '@mahjong/shared';
-import { analyzeScoreImage } from './analyze';
+import { analyzeScoreImage, notifyDiscord } from './analyze';
 
 type Bindings = {
   DB: D1Database;
@@ -367,6 +367,16 @@ app.post('/api/analyze', auth, async (c) => {
     console.error('analyze failed:', e);
     return c.json({ error: e instanceof Error ? e.message : '画像解析に失敗しました' }, 502);
   }
+});
+
+app.post('/api/discord/test', auth, async (c) => {
+  const url = c.env.DISCORD_WEBHOOK_URL;
+  if (!url) {
+    return c.json({ error: 'DISCORD_WEBHOOK_URL が設定されていません。wrangler secret で設定してください' }, 400);
+  }
+  const ok = await notifyDiscord(url, '✅ 麻雀スコア管理: Discord通知のテスト送信です');
+  if (!ok) return c.json({ error: 'Discordへの送信に失敗しました。Webhook URLを確認してください' }, 502);
+  return c.json({ ok: true });
 });
 
 export default app;

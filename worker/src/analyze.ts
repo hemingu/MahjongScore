@@ -28,15 +28,17 @@ interface GeminiResponse {
 }
 
 /** Discord Webhookに通知を送る。失敗しても呼び出し元の処理は継続させる。 */
-async function notifyDiscord(webhookUrl: string, message: string): Promise<void> {
+export async function notifyDiscord(webhookUrl: string, message: string): Promise<boolean> {
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: message }),
     });
+    return res.ok;
   } catch (e) {
     console.error('Discord通知に失敗:', e);
+    return false;
   }
 }
 
