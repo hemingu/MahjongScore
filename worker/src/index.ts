@@ -41,12 +41,42 @@ app.use(
 // ---- 認証 ----
 
 const SESSION_DAYS = 90;
+const MAX_LOGIN_FAILS = 5;
+const LOCK_MINUTES = 10;
 
 app.post('/api/login', async (c) => {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+
+  // ロック確認: 最終失敗から10分以内に5回以上失敗していたら拒否
+  const attempt = await c.env.DB.prepare(
+    `SELECT fail_count AS failCount FROM login_attempts WHERE ip = ? AND datetime(last_failed_at, '+${LOCK_MINUTES} minutes') > datetime('now')`,
+  )
+    .bind(ip)
+    .first<{ failCount: number }>();
+  if (attempt && attempt.failCount >= MAX_LOGIN_FAILS) {
+    return c.json(
+      { error: 'ログイン失敗が続いたため一時的にロックしています。10分ほど待って再試行してください' },
+      429,
+    );
+  }
+
   const { password } = await c.req.json<{ password?: string }>();
   if (!password || password !== c.env.AUTH_PASSWORD) {
+    // 失敗を記録（10分窓が切れていたらカウントを1にリセット）
+    await c.env.DB.prepare(
+      `INSERT INTO login_attempts (ip, fail_count, last_failed_at) VALUES (?, 1, datetime('now'))
+       ON CONFLICT(ip) DO UPDATE SET
+         fail_count = CASE WHEN datetime(last_failed_at, '+${LOCK_MINUTES} minutes') > datetime('now') THEN fail_count + 1 ELSE 1 END,
+         last_failed_at = datetime('now')`,
+    )
+      .bind(ip)
+      .run();
     return c.json({ error: 'パスワードが違います' }, 401);
   }
+
+  // 成功時は失敗記録をクリア
+  await c.env.DB.prepare('DELETE FROM login_attempts WHERE ip = ?').bind(ip).run();
+
   const token = await sign(
     { exp: Math.floor(Date.now() / 1000) + SESSION_DAYS * 24 * 60 * 60 },
     c.env.SESSION_SECRET,
