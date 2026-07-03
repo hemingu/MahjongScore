@@ -65,8 +65,8 @@ export default function StatsPage() {
                   <th
                     key={h}
                     className={`px-3 py-2 text-right first:text-center [&:nth-child(2)]:text-left whitespace-nowrap ${
-                      idx <= 1 ? 'sticky left-0 bg-emerald-700' : ''
-                    } ${idx === 1 ? 'left-[3.25rem]' : ''}`}
+                      idx <= 1 ? 'sticky bg-emerald-700' : ''
+                    } ${idx === 0 ? 'left-0 w-[3.25rem] min-w-[3.25rem]' : ''} ${idx === 1 ? 'left-[3.25rem]' : ''}`}
                   >
                     {h}
                   </th>
@@ -79,7 +79,7 @@ export default function StatsPage() {
                   s.rankCounts.reduce((acc, count, idx) => acc + count * (idx + 1), 0) / s.gameCount;
                 return (
                   <tr key={s.name} className="border-t border-gray-100 hover:bg-emerald-50/50">
-                    <td className="sticky left-0 bg-white px-3 py-2 text-center font-bold">{i + 1}</td>
+                    <td className="sticky left-0 w-[3.25rem] min-w-[3.25rem] bg-white px-3 py-2 text-center font-bold">{i + 1}</td>
                     <td className="sticky left-[3.25rem] bg-white px-3 py-2 font-medium">{s.name}</td>
                     <td
                       className={`px-3 py-2 text-right font-semibold ${s.totalPoint > 0 ? 'text-red-600' : s.totalPoint < 0 ? 'text-blue-600' : ''}`}
