@@ -132,13 +132,13 @@ export default function ChartsPage() {
           <section className="rounded-lg bg-white p-5 shadow">
             <h3 className="mb-3 font-semibold">ポイント推移</h3>
             <ResponsiveContainer width="100%" height={360}>
-              <LineChart data={pointTrend} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
+              <LineChart data={pointTrend} margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis
                   dataKey="gameNo"
                   tick={{ fill: MUTED, fontSize: 12 }}
                   stroke={BASELINE}
-                  label={{ value: '通算試合数', position: 'insideBottom', offset: -16, fill: MUTED, fontSize: 12 }}
+                  label={{ value: '通算試合数', position: 'insideBottom', offset: -4, fill: MUTED, fontSize: 12 }}
                 />
                 <YAxis tick={{ fill: MUTED, fontSize: 12 }} stroke={BASELINE} />
                 <ReferenceLine y={0} stroke={BASELINE} strokeWidth={1} />
