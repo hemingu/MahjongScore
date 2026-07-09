@@ -10,6 +10,11 @@ interface PlayerStats {
   totalPoint: number;
   rankCounts: [number, number, number, number];
   boxCount: number;
+  /** 素点ptの合計 = Σ(得点-30000)/1000 */
+  totalBasePt: number;
+  totalScore: number;
+  maxScore: number;
+  minScore: number;
 }
 
 export default function StatsPage() {
@@ -22,13 +27,27 @@ export default function StatsPage() {
       for (const r of game.results) {
         let s = map.get(r.playerId);
         if (!s) {
-          s = { name: r.playerName, gameCount: 0, totalPoint: 0, rankCounts: [0, 0, 0, 0], boxCount: 0 };
+          s = {
+            name: r.playerName,
+            gameCount: 0,
+            totalPoint: 0,
+            rankCounts: [0, 0, 0, 0],
+            boxCount: 0,
+            totalBasePt: 0,
+            totalScore: 0,
+            maxScore: -Infinity,
+            minScore: Infinity,
+          };
           map.set(r.playerId, s);
         }
         s.gameCount++;
         s.totalPoint += r.point;
         s.rankCounts[r.rank - 1]++;
         if (r.finalScore < 0) s.boxCount++;
+        s.totalBasePt += (r.finalScore - 30000) / 1000;
+        s.totalScore += r.finalScore;
+        s.maxScore = Math.max(s.maxScore, r.finalScore);
+        s.minScore = Math.min(s.minScore, r.finalScore);
       }
     }
     return [...map.values()].sort((a, b) => b.totalPoint - a.totalPoint);
@@ -46,6 +65,7 @@ export default function StatsPage() {
   if (error) return <p className="text-red-600">読み込みに失敗しました: {String(error)}</p>;
 
   const fmtRate = (count: number, total: number) => `${count} (${total === 0 ? 0 : Math.round((count / total) * 100)}%)`;
+  const fmtSigned = (v: number) => (v > 0 ? '+' : '') + v.toFixed(1);
 
   return (
     <div>
@@ -61,7 +81,7 @@ export default function StatsPage() {
           <table className="w-full text-sm whitespace-nowrap">
             <thead className="bg-emerald-700 text-white">
               <tr>
-                {['順位', '名前', '合計pt', '平均着順', '1位', '2位', '3位', '4位', '箱下'].map((h, idx) => (
+                {['順位', '名前', '合計pt', '合計素点', '合計ウマ・オカ', '平均着順', '1位', '2位', '3位', '4位', '箱下', '平均得点', '最大得点', '最小得点'].map((h, idx) => (
                   <th
                     key={h}
                     className={`px-3 py-2 text-right first:text-center [&:nth-child(2)]:text-left whitespace-nowrap ${
@@ -84,8 +104,10 @@ export default function StatsPage() {
                     <td
                       className={`px-3 py-2 text-right font-semibold ${s.totalPoint > 0 ? 'text-red-600' : s.totalPoint < 0 ? 'text-blue-600' : ''}`}
                     >
-                      {(s.totalPoint > 0 ? '+' : '') + s.totalPoint.toFixed(1)}
+                      {fmtSigned(s.totalPoint)}
                     </td>
+                    <td className="px-3 py-2 text-right">{fmtSigned(s.totalBasePt)}</td>
+                    <td className="px-3 py-2 text-right">{fmtSigned(s.totalPoint - s.totalBasePt)}</td>
                     <td className="px-3 py-2 text-right">{avgRank.toFixed(2)}</td>
                     {s.rankCounts.map((count, idx) => (
                       <td key={idx} className="px-3 py-2 text-right">
@@ -93,6 +115,11 @@ export default function StatsPage() {
                       </td>
                     ))}
                     <td className="px-3 py-2 text-right">{fmtRate(s.boxCount, s.gameCount)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {Math.round(s.totalScore / s.gameCount).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">{s.maxScore.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{s.minScore.toLocaleString()}</td>
                   </tr>
                 );
               })}
