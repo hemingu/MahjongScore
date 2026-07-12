@@ -10,9 +10,9 @@ interface PlayerStats {
   totalPoint: number;
   rankCounts: [number, number, number, number];
   boxCount: number;
-  /** 素点ptの合計 = Σ(得点-25000)/1000 */
+  /** 素点ptの合計 = Σ(得点-25000)/1000。ウマ・オカの合計は ptの合計 - この値 で求める */
   totalBasePt: number;
-  /** ウマ・オカの合計 = ptの合計 - 素点ptの合計 */
+  /** 終了時得点の合計（平均得点用） */
   totalScore: number;
   maxScore: number;
   minScore: number;
@@ -46,7 +46,7 @@ export default function StatsPage() {
         s.rankCounts[r.rank - 1]++;
         if (r.finalScore < 0) s.boxCount++;
         s.totalBasePt += (r.finalScore - 25000) / 1000;
-        s.totalScore += r.point - (r.finalScore - 25000) / 1000;
+        s.totalScore += r.finalScore;
         s.maxScore = Math.max(s.maxScore, r.finalScore);
         s.minScore = Math.min(s.minScore, r.finalScore);
       }
