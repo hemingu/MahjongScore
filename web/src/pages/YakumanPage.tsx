@@ -50,7 +50,7 @@ export default function YakumanPage() {
                   </td>
                   <td className="px-3 py-2">{y.playedAt}</td>
                   <td className="px-3 py-2 font-medium">{y.winnerName}</td>
-                  <td className="px-3 py-2">{y.loserName ?? 'ツモ'}</td>
+                  <td className="px-3 py-2">{y.loserName ?? '（ツモ）'}</td>
                   <td className="px-3 py-2">{y.isDealer ? '親' : '子'}</td>
                   {[0, 1, 2, 3].map((i) => (
                     <td key={i} className="px-3 py-2">
